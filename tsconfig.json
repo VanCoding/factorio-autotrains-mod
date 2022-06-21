@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "lib": ["esnext"],
+    "moduleResolution": "node",
+    "strict": true,
+    "rootDir": "src",
+    "types": ["typed-factorio/runtime"],
+    "outDir": "build",
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"],
+  "tstl": { "luaTarget": "JIT" }
+}

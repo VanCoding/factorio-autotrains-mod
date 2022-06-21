@@ -1,0 +1,19 @@
+{
+  "name": "autotrains",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "npm run clean && tstl",
+    "dev": "tstl --watch",
+    "clean": "rm -rd build"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "typed-factorio": "^1.2.0",
+    "typescript": "^4.7.4",
+    "typescript-to-lua": "^1.6.0"
+  }
+}
