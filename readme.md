@@ -1,4 +1,4 @@
-# Autotrains
+# Factorio Autotrains Mod
 
 This mod automatically schedules train transports between supply and demand stations, and sends trains to the depot after every transport.
 
@@ -35,7 +35,9 @@ To make a station a depot station:
 Transports will only be scheduled if the supply station can provide a full wagon of the resource and the demand station can store it completely. Otherwise the supply station have to top up its stocks, or the demand station to use lower it's stocks.
 
 ## Trains
+
 Trains always have to consist of just one locomotive, and one cargo or fluid wagon.
 
 ## Fueling
+
 Trains can be fueled at depot stations.
