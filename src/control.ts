@@ -172,6 +172,9 @@ const getAllStations = () => game.get_train_stops();
 
 const isIdleTrain = (train: LuaTrain) =>
   train.station && isDepotStation(train.station);
+const isFluidTrain = (train: LuaTrain) => train.fluid_wagons.length > 0;
+const isItemTrain = (train: LuaTrain) => !isFluidTrain(train);
+const isFluid = (signal: SignalID) => signal.type == "fluid";
 
 const getStationMaxTrains = (station: TrainStopEntity) => {
   return (
@@ -250,22 +253,6 @@ const getState = (): State => {
   return state;
 };
 
-const demandsMatch = (a: Demand, b: Demand) =>
-  a.station.unit_number === b.station.unit_number &&
-  signalsMatch(a.signal, b.signal);
-
-const getOrderedDemands = (oldDemands: Demand[], newDemands: Demand[]) => {
-  const demands: Demand[] = [];
-  for (const demand of oldDemands) {
-    const index = newDemands.findIndex((d) => demandsMatch(d, demand));
-    if (index >= 0) {
-      demands.push(demand);
-      newDemands.splice(index, 1);
-    }
-  }
-  return [...demands, ...newDemands];
-};
-
 let previousState: State = { demands: [], supplies: [] };
 
 const logChanges = (
@@ -310,21 +297,25 @@ const scheduleTransports = () => {
     demands: [...demandChanges.remained, ...demandChanges.added],
   };
   const idleTrains = getAllTrains().filter(isIdleTrain);
+  const fluidTrains = idleTrains.filter(isFluidTrain);
+  const itemTrains = idleTrains.filter(isItemTrain);
 
-  for (let i = 0; i < state.demands.length && idleTrains.length > 0; i++) {
+  for (let i = 0; i < state.demands.length; i++) {
     const demand = state.demands[i];
     const supply = findAndRemoveSupply(state.supplies, demand.signal);
-    if (supply) {
-      log;
-      scheduleTransport(
-        supply.signal,
-        supply.station,
-        demand.station,
-        idleTrains.shift()!
-      );
-      state.demands.splice(i, 1);
-      i -= 1;
-    }
+    if (!supply) continue;
+
+    const trains = isFluid(demand.signal) ? fluidTrains : itemTrains;
+    if (!trains.length) continue;
+
+    scheduleTransport(
+      supply.signal,
+      supply.station,
+      demand.station,
+      trains.shift()!
+    );
+    state.demands.splice(i, 1);
+    i -= 1;
   }
   previousState = state;
 };
@@ -338,29 +329,6 @@ const findAndRemoveSupply = (supplies: Supply[], signal: SignalID) => {
   } else {
     return null;
   }
-};
-
-const getDemand = (station: TrainStopEntity) => {
-  if (!isDemandStation(station)) return;
-  const balance = getDemandBalance(station);
-  if (!balance) return;
-  if (
-    balance.count < getWagonCapacity(balance.signal) ||
-    balance.trains >= getStationMaxTrains(station)
-  )
-    return;
-  return balance.signal;
-};
-
-const canPickup = (station: TrainStopEntity, signal: SignalID) => {
-  if (!isSupplyStation(station)) return false;
-  const balance = getSupplyBalance(station);
-  return (
-    !!balance &&
-    signalsMatch(balance.signal, signal) &&
-    balance.count >= getWagonCapacity(balance.signal) &&
-    balance.trains < getStationMaxTrains(station)
-  );
 };
 
 const scheduleTransport = (
