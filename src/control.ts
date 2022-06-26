@@ -102,18 +102,61 @@ const getStationStock = (station: TrainStopEntity) => {
 const getDemandBalance = (station: TrainStopEntity) => {
   const demand = getDemandCapacity(station);
   if (!demand) return;
-  const deliveringTrains = getTrainsWithDestination(station, 2);
+  const trains = getTrainsWithDestination(station, 2);
+  const pickingUp = trains.filter((train) => train.schedule?.current === 1);
+  const delivering = trains.filter((train) => train.schedule?.current === 2);
+
   return {
     signal: demand.signal,
-    count: demand.count - getTrainsContents(deliveringTrains, demand.signal),
-    trains: deliveringTrains.length,
+    count:
+      demand.count -
+      (getStationStock(station)?.count ?? 0) -
+      getTrainsContents(delivering, demand.signal) -
+      pickingUp.length * getWagonCapacity(demand.signal),
+    trains: pickingUp.length && delivering.length,
   };
+};
+
+const times = <T>(object: T, count: number): T[] => {
+  const result: T[] = [];
+  for (let i = 0; i < count; i++) {
+    result.push(object);
+  }
+  return result;
+};
+
+const getStationDemands = (station: TrainStopEntity): Demand[] => {
+  const balance = getDemandBalance(station);
+  if (!balance) return [];
+  const trains = Math.floor(balance.count / getWagonCapacity(balance.signal));
+  return times(
+    {
+      signal: balance.signal,
+      station,
+    },
+    trains
+  );
+};
+
+const getStationSupplies = (station: TrainStopEntity): Supply[] => {
+  const balance = getSupplyBalance(station);
+  if (!balance) return [];
+  const trains = Math.floor(balance.count / getWagonCapacity(balance.signal));
+  return times(
+    {
+      signal: balance.signal,
+      station,
+    },
+    trains
+  );
 };
 
 const getSupplyBalance = (station: TrainStopEntity) => {
   const supply = getStationStock(station);
   if (!supply) return;
-  const supplyingTrains = getTrainsWithDestination(station, 1);
+  const supplyingTrains = getTrainsWithDestination(station, 1).filter(
+    (train) => train.schedule?.current === 1
+  );
   return {
     count:
       supply.count +
@@ -127,9 +170,6 @@ const getSupplyBalance = (station: TrainStopEntity) => {
 const getAllTrains = () => game?.get_surface("nauvis")?.get_trains() ?? [];
 const getAllStations = () => game.get_train_stops();
 
-const getDepotStations = () => getAllStations().filter(isDepotStation);
-const getDepotStation = () => getDepotStations()[0];
-
 const isIdleTrain = (train: LuaTrain) =>
   train.station && isDepotStation(train.station);
 
@@ -140,6 +180,164 @@ const getStationMaxTrains = (station: TrainStopEntity) => {
       name: "signal-T",
     }) ?? 1
   );
+};
+
+type Matcher<T> = (a: T, b: T) => boolean;
+type Changes<T> = {
+  added: T[];
+  remained: T[];
+  removed: T[];
+};
+
+const detectChanges = <T>(
+  previous: T[],
+  current: T[],
+  match: Matcher<T>
+): Changes<T> => {
+  const removed: T[] = [];
+  const added: T[] = [...current];
+  const remained: T[] = [];
+  for (const a of previous) {
+    const index = added.findIndex((b) => match(a, b));
+    if (index >= 0) {
+      remained.push(a);
+      added.splice(index, 1);
+    } else {
+      removed.push(a);
+    }
+  }
+  return {
+    removed,
+    remained,
+    added,
+  };
+};
+
+const supplyOrDemandMatches = <
+  T extends { station: TrainStopEntity; signal: SignalID }
+>(
+  a: T,
+  b: T
+) =>
+  a.station.unit_number == b.station.unit_number &&
+  signalsMatch(a.signal, b.signal);
+
+type Supply = {
+  station: TrainStopEntity;
+  signal: SignalID;
+};
+
+type Demand = {
+  station: TrainStopEntity;
+  signal: SignalID;
+};
+
+type State = {
+  supplies: Supply[];
+  demands: Demand[];
+};
+
+const getState = (): State => {
+  const state: State = { demands: [], supplies: [] };
+  const stations = getAllStations();
+  for (const station of stations) {
+    if (isDemandStation(station)) {
+      state.demands.push(...getStationDemands(station));
+    } else if (isSupplyStation(station)) {
+      state.supplies.push(...getStationSupplies(station));
+    }
+  }
+  return state;
+};
+
+const demandsMatch = (a: Demand, b: Demand) =>
+  a.station.unit_number === b.station.unit_number &&
+  signalsMatch(a.signal, b.signal);
+
+const getOrderedDemands = (oldDemands: Demand[], newDemands: Demand[]) => {
+  const demands: Demand[] = [];
+  for (const demand of oldDemands) {
+    const index = newDemands.findIndex((d) => demandsMatch(d, demand));
+    if (index >= 0) {
+      demands.push(demand);
+      newDemands.splice(index, 1);
+    }
+  }
+  return [...demands, ...newDemands];
+};
+
+let previousState: State = { demands: [], supplies: [] };
+
+const logChanges = (
+  name: string,
+  changes: {
+    added: { station: TrainStopEntity; signal: SignalID }[];
+    removed: { station: TrainStopEntity; signal: SignalID }[];
+  }
+) => {
+  logChangesOfType(name, "Added", changes.added);
+  logChangesOfType(name, "Removed", changes.removed);
+};
+
+const logChangesOfType = (
+  name: string,
+  type: string,
+  changes: { station: TrainStopEntity; signal: SignalID }[]
+) => {
+  for (const { station, signal } of changes) {
+    log(`${type} ${name} of ${signal.name} at station ${station.backer_name}`);
+  }
+};
+
+const scheduleTransports = () => {
+  const currentState = getState();
+  const demandChanges = detectChanges(
+    previousState.demands,
+    currentState.demands,
+    supplyOrDemandMatches
+  );
+  logChanges("demand", demandChanges);
+
+  const supplyChanges = detectChanges(
+    previousState.supplies,
+    currentState.supplies,
+    supplyOrDemandMatches
+  );
+  logChanges("supply", supplyChanges);
+
+  const state = {
+    supplies: currentState.supplies,
+    demands: [...demandChanges.remained, ...demandChanges.added],
+  };
+  const idleTrains = getAllTrains().filter(isIdleTrain);
+
+  for (let i = 0; i < state.demands.length && idleTrains.length > 0; i++) {
+    const demand = state.demands[i];
+    const supply = findAndRemoveSupply(state.supplies, demand.signal);
+    if (supply) {
+      log;
+      scheduleTransport(
+        supply.signal,
+        supply.station,
+        demand.station,
+        idleTrains.shift()!
+      );
+      state.demands.splice(i, 1);
+      i -= 1;
+    }
+  }
+  previousState = state;
+};
+
+const findAndRemoveSupply = (supplies: Supply[], signal: SignalID) => {
+  const index = supplies.findIndex((supply) =>
+    signalsMatch(supply.signal, signal)
+  );
+  if (index >= 0) {
+    return supplies.splice(index, 1)[0];
+  } else {
+    return null;
+  }
 };
 
 const getDemand = (station: TrainStopEntity) => {
@@ -165,46 +363,39 @@ const canPickup = (station: TrainStopEntity, signal: SignalID) => {
   );
 };
 
-const matchDemandAndSupply = () => {
-  const idleTrain = getAllTrains().find(isIdleTrain);
-  if (!idleTrain) {
-    return;
-  }
-  const stations = getAllStations();
-  for (const demandStation of stations) {
-    const demand = getDemand(demandStation);
-    if (!demand) continue;
-    const supplyStation = stations.find((station) =>
-      canPickup(station, demand)
-    );
-    if (!supplyStation) {
-      return;
-    }
-    idleTrain.schedule = {
-      current: 1,
-      records: [
-        {
-          station: supplyStation.backer_name,
-          wait_conditions: [{ type: "full", compare_type: "and" }],
-        },
-        {
-          station: demandStation.backer_name,
-          wait_conditions: [{ type: "empty", compare_type: "and" }],
-        },
-        {
-          station: idleTrain.station!.backer_name,
-          wait_conditions: [{ type: "full", compare_type: "and" }],
-        },
-      ],
-    };
-    return;
-  }
+const scheduleTransport = (
+  signal: SignalID,
+  supplyStation: TrainStopEntity,
+  demandStation: TrainStopEntity,
+  train: LuaTrain
+) => {
+  log(
+    `transporting ${signal.name} from ${supplyStation.backer_name} to ${demandStation.backer_name} on train ${train.id}`
+  );
+  train.schedule = {
+    current: 1,
+    records: [
+      {
+        station: supplyStation.backer_name,
+        wait_conditions: [{ type: "full", compare_type: "and" }],
+      },
+      {
+        station: demandStation.backer_name,
+        wait_conditions: [{ type: "empty", compare_type: "and" }],
+      },
+      {
+        station: train.station!.backer_name,
+        wait_conditions: [{ type: "full", compare_type: "and" }],
+      },
+    ],
+  };
 };
 
 const init = () => {
-  log("welcome to Autotrain");
+  log("welcome to Autotrains");
   script.on_event(defines.events.on_tick, (e) => {
-    matchDemandAndSupply();
+    if (e.tick % 60 != 0) return;
+    scheduleTransports();
   });
 };
 
