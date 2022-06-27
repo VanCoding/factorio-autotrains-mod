@@ -4,7 +4,7 @@
   "title": "Autotrains",
   "author": "Patrik Stutz",
   "contact": "patrik.stutz@gmail.com",
-  "homepage": "github.com/VanCoding",
+  "homepage": "https://github.com/VanCoding/factorio-autotrains-mod",
   "description": "A mod to make factorio trains as intelligent as drones",
   "factorio_version": "1.1",
   "dependencies": ["base >= 1.1.46"]
