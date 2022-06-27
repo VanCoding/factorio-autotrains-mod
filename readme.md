@@ -41,3 +41,24 @@ Trains always have to consist of just one locomotive, and one cargo or fluid wag
 ## Fueling
 
 Trains can be fueled at depot stations.
+
+# For Developers
+
+## Set up environment
+
+1. Install `Node.js` and `zip`, or fi you have `nix` and `direnv` you'll get this as soon as you enter the directory.
+1. Install the dependencies using `npm ci`
+
+## Building the zip
+
+`npm build`
+
+## Developing in watch-mode
+
+`npm run dev`
+
+You'll have to leave and re-enter the game after each change.
+
+# License
+
+MIT
