@@ -306,7 +306,7 @@ const scheduleTransports = () => {
     if (!supply) continue;
 
     const trains = isFluid(demand.signal) ? fluidTrains : itemTrains;
-    if (!trains.length) continue;
+    if (trains.length === 0) continue;
 
     scheduleTransport(
       supply.signal,
