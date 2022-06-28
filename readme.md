@@ -26,6 +26,8 @@ To make a station a demand station:
 Trains stay at depot stations until they get a transport job. After a transport job, they always return to the depot at which they started.
 To make a train available for transports, send it to any depot station. As soon as it arrives, it will be assigned transport jobs, if there are any.
 
+Since only trains that are waiting directly at a depot station can be assigned transport jobs, it is recommended to have at least two depot stations: One for item trains, and one for fluid trains. You should not mix these two.
+
 To make a station a depot station:
 
 - send it the "0"-Signal through **red** wire
@@ -51,7 +53,7 @@ Trains can be fueled at depot stations.
 
 ## Building the zip
 
-`npm build`
+`npm run build`
 
 ## Developing in watch-mode
 
