@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "npm run clean && tstl && zip -r build.zip info.json control.lua build",
+    "build": "npm run clean && tstl && rm -rd autotrains && rm build.zip &&  mkdir autotrains && cp -r build autotrains/build && cp info.json autotrains/info.json && cp control.lua autotrains/control.lua && zip -r build.zip autotrains",
     "dev": "tstl --watch",
     "clean": "rm -rd build"
   },
