@@ -151,7 +151,7 @@ const getStationDemands = (station: TrainStopEntity): Demand[] => {
   const balance = getDemandBalance(station);
   if (!balance) return [];
   const countPerWagon = getWagonCapacity(balance.signal, getStationSlots(station))
-  const trains = Math.max(Math.floor(balance.count / countPerWagon), getStationMaxTrains(station));
+  const trains = Math.min(Math.floor(balance.count / countPerWagon), getStationMaxTrains(station));
   return times(
     {
       signal: balance.signal,
