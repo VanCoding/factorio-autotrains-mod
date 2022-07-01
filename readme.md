@@ -11,6 +11,7 @@ To make a station a supply station:
 
 - send it the "S"-Signal through **red** wire
 - send it the available amount of the resource through **green** wire (only one resource can be supplied per station!)
+- optionally send it a "T"-Signal through **red** wire, indicating the max train count on this station.
 
 ## Demand stations
 
@@ -20,7 +21,8 @@ To make a station a demand station:
 - send it the "D"-Signal through **red** wire
 - send it the total storage capacity of the resource of demand through **red** wire
 - send it the currently stored amount through **green** wire
-- optionally send it a "C"-Signal with indicates the amount of stacks that should be transported per train. Defaults to full trains.
+- optionally send it a "C"-Signal through **red** wire, indicating the amount of stacks that should be transported per train. Defaults to full trains (40 stacks). Not supported for fluid trains.
+- optionally send it a "T"-Signal through **red** wire, indicating the max train count on this station.
 
 ## Depot stations
 
