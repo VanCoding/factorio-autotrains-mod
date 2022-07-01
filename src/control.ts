@@ -272,7 +272,7 @@ const logChangesOfType = (
   changes: { station: TrainStopEntity; signal: SignalID }[]
 ) => {
   for (const { station, signal } of changes) {
-    log(`${type} ${name} of ${signal.name} at station ${station.backer_name}`);
+    log(`${type} ${name} of ${signal.name} at station ${station.valid ? station.backer_name : "unknown"}`);
   }
 };
 
