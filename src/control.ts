@@ -8,6 +8,7 @@ const IS_SUPPLY_STATION_SIGNAL: SignalID = {
 };
 const IS_DEPOT_STATION_SIGNAL: SignalID = { type: "virtual", name: "signal-0" };
 const CAPACITY_SIGNAL: SignalID = { type: "virtual", name: "signal-C" }
+const MAX_TRAINS_SIGNAL: SignalID = { type: "virtual", name: "signal-T" }
 
 const signalsMatch = (a: SignalID, b: SignalID) => {
   if (!a) {
@@ -191,10 +192,7 @@ const isFluid = (signal: SignalID) => signal.type == "fluid";
 
 const getStationMaxTrains = (station: TrainStopEntity) => {
   return (
-    getStationRedSignalCount(station, {
-      type: "virtual",
-      name: "signal-T",
-    }) ?? 1
+    getStationRedSignalCount(station, MAX_TRAINS_SIGNAL) ?? 1
   );
 };
 
