@@ -20,6 +20,7 @@ To make a station a demand station:
 - send it the "D"-Signal through **red** wire
 - send it the total storage capacity of the resource of demand through **red** wire
 - send it the currently stored amount through **green** wire
+- optionally send it a "C"-Signal with indicates the amount of stacks that should be transported per train. Defaults to full trains.
 
 ## Depot stations
 

@@ -7,6 +7,7 @@ const IS_SUPPLY_STATION_SIGNAL: SignalID = {
   name: "signal-S",
 };
 const IS_DEPOT_STATION_SIGNAL: SignalID = { type: "virtual", name: "signal-0" };
+const CAPACITY_SIGNAL: SignalID = { type: "virtual", name: "signal-C" }
 
 const signalsMatch = (a: SignalID, b: SignalID) => {
   if (!a) {
@@ -22,20 +23,37 @@ const signalsMatch = (a: SignalID, b: SignalID) => {
   }
 };
 
-const getWagonCapacity = (signal: SignalID) => {
+const getStackSize = (itemName: string) => {
+  const prototype = game.item_prototypes[itemName];
+  if (prototype.stackable) {
+    return prototype.stack_size;
+  } else {
+    return 1;
+  }
+}
+
+const getWagonCapacity = (signal: SignalID, slots = 40) => {
   if (signal.type == "item") {
-    const prototype = game.item_prototypes[signal.name!];
-    if (prototype.stackable) {
-      return 40 * prototype.stack_size;
-    } else {
-      return 40;
-    }
+    return getStackSize(signal.name!) * slots
   } else if (signal.type == "fluid") {
     return 25000;
   } else {
     return 0;
   }
 };
+
+const getStationSlots = (station: TrainStopEntity) => {
+  return getStationRedSignalCount(station, CAPACITY_SIGNAL) ?? 40;
+}
+
+const getTrainSlots = (train: LuaTrain) => {
+  const bar = train.cargo_wagons[0]?.get_inventory(defines.inventory.cargo_wagon)?.get_bar()
+  if (bar === undefined) {
+    return 40
+  } else {
+    return (bar - 1)
+  }
+}
 
 const getTrainDestination = (train: LuaTrain, index: number) =>
   train.schedule && train.schedule.records[index - 1]?.station;
@@ -88,6 +106,10 @@ const getTrainsContents = (trains: LuaTrain[], signal: SignalID) => {
   );
 };
 
+const getTrainsCapacity = (trains: LuaTrain[], signal: SignalID) => {
+  return trains.reduce((total, train) => total + getWagonCapacity(signal, getTrainSlots(train)), 0)
+}
+
 const getTrainContentSignal = (train: LuaTrain): SignalID | undefined => {
   const item = Object.keys(train.get_contents())[0];
   if (item) return { type: "item", name: item };
@@ -112,7 +134,7 @@ const getDemandBalance = (station: TrainStopEntity) => {
       demand.count -
       (getStationStock(station)?.count ?? 0) -
       getTrainsContents(delivering, demand.signal) -
-      pickingUp.length * getWagonCapacity(demand.signal),
+      getTrainsCapacity(pickingUp, demand.signal),
     trains: pickingUp.length && delivering.length,
   };
 };
@@ -128,28 +150,18 @@ const times = <T>(object: T, count: number): T[] => {
 const getStationDemands = (station: TrainStopEntity): Demand[] => {
   const balance = getDemandBalance(station);
   if (!balance) return [];
-  const trains = Math.floor(balance.count / getWagonCapacity(balance.signal));
+  const countPerWagon = getWagonCapacity(balance.signal, getStationSlots(station))
+  const trains = Math.max(Math.floor(balance.count / countPerWagon), getStationMaxTrains(station));
   return times(
     {
       signal: balance.signal,
       station,
+      count: countPerWagon
     },
     trains
   );
 };
 
-const getStationSupplies = (station: TrainStopEntity): Supply[] => {
-  const balance = getSupplyBalance(station);
-  if (!balance) return [];
-  const trains = Math.floor(balance.count / getWagonCapacity(balance.signal));
-  return times(
-    {
-      signal: balance.signal,
-      station,
-    },
-    trains
-  );
-};
 
 const getSupplyBalance = (station: TrainStopEntity) => {
   const supply = getStationStock(station);
@@ -157,13 +169,14 @@ const getSupplyBalance = (station: TrainStopEntity) => {
   const supplyingTrains = getTrainsWithDestination(station, 1).filter(
     (train) => train.schedule?.current === 1
   );
+  const maxTrains = getStationMaxTrains(station);
   return {
     count:
       supply.count +
       getTrainsContents(supplyingTrains, supply.signal) -
       supplyingTrains.length * getWagonCapacity(supply.signal),
     signal: supply.signal,
-    trains: supplyingTrains.length,
+    trains: maxTrains - supplyingTrains.length,
   };
 };
 
@@ -216,23 +229,22 @@ const detectChanges = <T>(
   };
 };
 
-const supplyOrDemandMatches = <
-  T extends { station: TrainStopEntity; signal: SignalID }
->(
-  a: T,
-  b: T
-) =>
+const demandMatches = (a: Demand, b: Demand) =>
   a.station.unit_number == b.station.unit_number &&
+  a.count == b.count &&
   signalsMatch(a.signal, b.signal);
 
 type Supply = {
   station: TrainStopEntity;
   signal: SignalID;
+  trains: number;
+  count: number;
 };
 
 type Demand = {
   station: TrainStopEntity;
   signal: SignalID;
+  count: number;
 };
 
 type State = {
@@ -247,7 +259,10 @@ const getState = (): State => {
     if (isDemandStation(station)) {
       state.demands.push(...getStationDemands(station));
     } else if (isSupplyStation(station)) {
-      state.supplies.push(...getStationSupplies(station));
+      const balance = getSupplyBalance(station);
+      if (balance) {
+        state.supplies.push({ station, ...balance });
+      }
     }
   }
   return state;
@@ -258,8 +273,8 @@ let previousState: State = { demands: [], supplies: [] };
 const logChanges = (
   name: string,
   changes: {
-    added: { station: TrainStopEntity; signal: SignalID }[];
-    removed: { station: TrainStopEntity; signal: SignalID }[];
+    added: Demand[];
+    removed: Demand[];
   }
 ) => {
   logChangesOfType(name, "Added", changes.added);
@@ -269,10 +284,10 @@ const logChanges = (
 const logChangesOfType = (
   name: string,
   type: string,
-  changes: { station: TrainStopEntity; signal: SignalID }[]
+  changes: Demand[]
 ) => {
-  for (const { station, signal } of changes) {
-    log(`${type} ${name} of ${signal.name} at station ${station.valid ? station.backer_name : "unknown"}`);
+  for (const { station, signal, count } of changes) {
+    log(`${type} ${name} of ${count} ${signal.name} at station ${station.valid ? station.backer_name : "unknown"}`);
   }
 };
 
@@ -281,16 +296,9 @@ const scheduleTransports = () => {
   const demandChanges = detectChanges(
     previousState.demands,
     currentState.demands,
-    supplyOrDemandMatches
+    demandMatches
   );
   logChanges("demand", demandChanges);
-
-  const supplyChanges = detectChanges(
-    previousState.supplies,
-    currentState.supplies,
-    supplyOrDemandMatches
-  );
-  logChanges("supply", supplyChanges);
 
   const state = {
     supplies: currentState.supplies,
@@ -302,16 +310,21 @@ const scheduleTransports = () => {
 
   for (let i = 0; i < state.demands.length; i++) {
     const demand = state.demands[i];
-    const supply = findAndRemoveSupply(state.supplies, demand.signal);
+    const supply = findMatchingSupply(demand, state.supplies);
     if (!supply) continue;
 
     const trains = isFluid(demand.signal) ? fluidTrains : itemTrains;
     if (trains.length === 0) continue;
 
+    supply.count -= demand.count;
+    supply.trains -= 1;
+    if (supply.count <= 0 || supply.trains <= 0) {
+      state.supplies.splice(state.supplies.indexOf(supply), 1)[0];
+    }
+
     scheduleTransport(
-      supply.signal,
+      demand,
       supply.station,
-      demand.station,
       trains.shift()!
     );
     state.demands.splice(i, 1);
@@ -320,25 +333,19 @@ const scheduleTransports = () => {
   previousState = state;
 };
 
-const findAndRemoveSupply = (supplies: Supply[], signal: SignalID) => {
-  const index = supplies.findIndex((supply) =>
-    signalsMatch(supply.signal, signal)
+const findMatchingSupply = (demand: Demand, supplies: Supply[]) => {
+  return supplies.find((supply) =>
+    signalsMatch(supply.signal, demand.signal) && supply.count >= demand.count
   );
-  if (index >= 0) {
-    return supplies.splice(index, 1)[0];
-  } else {
-    return null;
-  }
 };
 
 const scheduleTransport = (
-  signal: SignalID,
+  demand: Demand,
   supplyStation: TrainStopEntity,
-  demandStation: TrainStopEntity,
-  train: LuaTrain
+  train: LuaTrain,
 ) => {
   log(
-    `transporting ${signal.name} from ${supplyStation.backer_name} to ${demandStation.backer_name} on train ${train.id}`
+    `transporting ${demand.signal.name} from ${supplyStation.backer_name} to ${demand.station.backer_name} on train ${train.id}`
   );
   train.schedule = {
     current: 1,
@@ -348,7 +355,7 @@ const scheduleTransport = (
         wait_conditions: [{ type: "full", compare_type: "and" }],
       },
       {
-        station: demandStation.backer_name,
+        station: demand.station.backer_name,
         wait_conditions: [{ type: "empty", compare_type: "and" }],
       },
       {
@@ -357,6 +364,9 @@ const scheduleTransport = (
       },
     ],
   };
+  if (demand.signal.type === "item") {
+    train.cargo_wagons[0].get_inventory(defines.inventory.cargo_wagon)?.set_bar(Math.ceil(demand.count / getStackSize(demand.signal.name!)) + 1)
+  }
 };
 
 const init = () => {
